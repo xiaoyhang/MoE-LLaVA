@@ -18,9 +18,9 @@ from typing import List, Optional, Tuple, Union
 import torch
 import torch.nn as nn
 
-from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
-from .phi.configuration_phi import PhiConfig
-from .phi.modeling_phi import PhiModel, PhiForCausalLM
+from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer, PhiConfig, PhiModel, PhiForCausalLM
+# from .phi.configuration_phi import PhiConfig
+# from .phi.modeling_phi import PhiModel, PhiForCausalLM
 
 from transformers.modeling_outputs import CausalLMOutputWithPast
 

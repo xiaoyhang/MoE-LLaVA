@@ -20,8 +20,9 @@ import torch.nn as nn
 
 from transformers import AutoConfig, AutoModelForCausalLM, DynamicCache, Cache
 from transformers.modeling_attn_mask_utils import _prepare_4d_causal_attention_mask
-from .phi.configuration_phi import PhiConfig
-from .phi.modeling_phi import PhiModel, PhiForCausalLM
+# from .phi.configuration_phi import PhiConfig
+# from .phi.modeling_phi import PhiModel, PhiForCausalLM
+from transformers import PhiConfig, PhiModel, PhiForCausalLM
 
 from transformers.modeling_outputs import CausalLMOutputWithPast
 

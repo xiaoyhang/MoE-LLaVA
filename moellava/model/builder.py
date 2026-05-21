@@ -46,7 +46,7 @@ from moellava.constants import DEFAULT_IMAGE_PATCH_TOKEN, DEFAULT_IM_START_TOKEN
     DEFAULT_VID_END_TOKEN, DEFAULT_VID_START_TOKEN, DEFAULT_VIDEO_PATCH_TOKEN
 from moellava.model.language_model.qwen.tokenization_qwen import QWenTokenizer
 
-
+MOE_INFER = os.environ.get("MOE_INFER", "1") == "1"
 def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, load_4bit=False, device_map="auto",
                           device="cuda", padding_side="right", merge=False, **kwargs):
     kwargs = {"device_map": device_map, **kwargs}
@@ -167,15 +167,19 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
                 tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False, padding_side=padding_side)
                 model = EvalMoELLaVALlamaForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, config=lora_cfg_pretrained, **kwargs)
             if not merge:
-                import deepspeed
-                deepspeed.init_distributed(dist_backend='nccl')
-                # Initialize the DeepSpeed-Inference engine
-                ds_engine = deepspeed.init_inference(model,
-                                                     # mp_size=2,
-                                                     # dtype=torch.half,
-                                                     checkpoint=None,
-                                                     replace_with_kernel_inject=True)
-                model = ds_engine.module
+                if MOE_INFER:
+                    model = model  # 不用 deepspeed
+                    model.eval()
+                else:
+                    import deepspeed
+                    deepspeed.init_distributed(dist_backend='nccl')
+                    # Initialize the DeepSpeed-Inference engine
+                    ds_engine = deepspeed.init_inference(model,
+                                                        # mp_size=2,
+                                                        # dtype=torch.half,
+                                                        checkpoint=None,
+                                                        replace_with_kernel_inject=True)
+                    model = ds_engine.module
         elif model_base is not None:
             # this may be mm projector only
             print('Loading LLaVA from base model...')
@@ -183,7 +187,7 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
                 if not os.path.isfile(os.path.join(model_path, 'configuration_mpt.py')):
                     shutil.copyfile(os.path.join(model_base, 'configuration_mpt.py'), os.path.join(model_path, 'configuration_mpt.py'))
                 tokenizer = AutoTokenizer.from_pretrained(model_base, use_fast=True, padding_side=padding_side)
-                cfg_pretrained = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
+                cfg_pretrained = AutoConfig.from_pretrained(model_path, trust_remote_code=False)
                 model = LlavaMPTForCausalLM.from_pretrained(model_base, low_cpu_mem_usage=True, config=cfg_pretrained, **kwargs)
             # =============================================================================================
             elif 'openchat' in model_name.lower() or 'mistral' in model_name.lower():
@@ -191,15 +195,19 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
                 cfg_pretrained = AutoConfig.from_pretrained(model_path)
                 if getattr(cfg_pretrained, 'moe', {}).get('moe_enable', False):
                     model = EvalMoELLaVAMistralForCausalLM.from_pretrained(model_base, low_cpu_mem_usage=True, config=cfg_pretrained, **kwargs)
-                    import deepspeed
-                    deepspeed.init_distributed(dist_backend='nccl')
-                    # Initialize the DeepSpeed-Inference engine
-                    ds_engine = deepspeed.init_inference(model,
-                                                         # mp_size=2,
-                                                         # dtype=torch.half,
-                                                         checkpoint=None,
-                                                         replace_with_kernel_inject=False)
-                    model = ds_engine.module
+                    if MOE_INFER:
+                        model = model  # 不用 deepspeed
+                        model.eval()
+                    else:
+                        import deepspeed
+                        deepspeed.init_distributed(dist_backend='nccl')
+                        # Initialize the DeepSpeed-Inference engine
+                        ds_engine = deepspeed.init_inference(model,
+                                                            # mp_size=2,
+                                                            # dtype=torch.half,
+                                                            checkpoint=None,
+                                                            replace_with_kernel_inject=False)
+                        model = ds_engine.module
                 else:
                     model = LlavaMistralForCausalLM.from_pretrained(model_base, low_cpu_mem_usage=True, config=cfg_pretrained, **kwargs)
             elif 'phi' in model_name.lower():
@@ -207,15 +215,19 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
                 cfg_pretrained = LlavaPhiConfig.from_pretrained(model_path)
                 if getattr(cfg_pretrained, 'moe', {}).get('moe_enable', False):
                     model = EvalMoELLaVAPhiForCausalLM.from_pretrained(model_base, low_cpu_mem_usage=True, config=cfg_pretrained, **kwargs)
-                    import deepspeed
-                    deepspeed.init_distributed(dist_backend='nccl')
-                    # Initialize the DeepSpeed-Inference engine
-                    ds_engine = deepspeed.init_inference(model,
-                                                         # mp_size=2,
-                                                         # dtype=torch.half,
-                                                         checkpoint=None,
-                                                         replace_with_kernel_inject=False)
-                    model = ds_engine.module
+                    if MOE_INFER:
+                        model = model  # 不用 deepspeed
+                        model.eval()
+                    else:
+                        import deepspeed
+                        deepspeed.init_distributed(dist_backend='nccl')
+                        # Initialize the DeepSpeed-Inference engine
+                        ds_engine = deepspeed.init_inference(model,
+                                                            # mp_size=2,
+                                                            # dtype=torch.half,
+                                                            checkpoint=None,
+                                                            replace_with_kernel_inject=False)
+                        model = ds_engine.module
                 else:
                     model = LlavaPhiForCausalLM.from_pretrained(model_base, low_cpu_mem_usage=True, config=cfg_pretrained, **kwargs)
                 model.config.eos_token_id = tokenizer.eos_token_id
@@ -224,8 +236,12 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
                 cfg_pretrained = LlavaQwen1_5Config.from_pretrained(model_path)
                 if getattr(cfg_pretrained, 'moe', {}).get('moe_enable', False):
                     model = EvalMoELLaVAQwen1_5ForCausalLM.from_pretrained(model_base, low_cpu_mem_usage=True, config=cfg_pretrained, **kwargs)
-                    import deepspeed
-                    deepspeed.init_distributed(dist_backend='nccl')
+                    if MOE_INFER:
+                        model = model  # 不用 deepspeed
+                        model.eval()
+                    else:
+                        import deepspeed
+                        deepspeed.init_distributed(dist_backend='nccl')
                     # Initialize the DeepSpeed-Inference engine
                     ds_engine = deepspeed.init_inference(model,
                                                          # mp_size=2,
@@ -241,15 +257,19 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
                 cfg_pretrained = LlavaMiniCPMConfig.from_pretrained(model_path)
                 if getattr(cfg_pretrained, 'moe', {}).get('moe_enable', False):
                     model = EvalMoELLaVAMiniCPMForCausalLM.from_pretrained(model_base, low_cpu_mem_usage=True, config=cfg_pretrained, **kwargs)
-                    import deepspeed
-                    deepspeed.init_distributed(dist_backend='nccl')
-                    # Initialize the DeepSpeed-Inference engine
-                    ds_engine = deepspeed.init_inference(model,
-                                                         # mp_size=2,
-                                                         # dtype=torch.half,
-                                                         checkpoint=None,
-                                                         replace_with_kernel_inject=False)
-                    model = ds_engine.module
+                    if MOE_INFER:
+                        model = model  # 不用 deepspeed
+                        model.eval()
+                    else:
+                        import deepspeed
+                        deepspeed.init_distributed(dist_backend='nccl')
+                        # Initialize the DeepSpeed-Inference engine
+                        ds_engine = deepspeed.init_inference(model,
+                                                            # mp_size=2,
+                                                            # dtype=torch.half,
+                                                            checkpoint=None,
+                                                            replace_with_kernel_inject=False)
+                        model = ds_engine.module
                 else:
                     model = LlavaMiniCPMForCausalLM.from_pretrained(model_base, low_cpu_mem_usage=True, config=cfg_pretrained, **kwargs)
                 model.config.eos_token_id = tokenizer.eos_token_id
@@ -260,15 +280,19 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
                 cfg_pretrained = StableLMEpochConfig.from_pretrained(model_path)
                 if getattr(cfg_pretrained, 'moe', {}).get('moe_enable', False):
                     model = EvalMoELLaVAStablelmForCausalLM.from_pretrained(model_base, low_cpu_mem_usage=True, config=cfg_pretrained, **kwargs)
-                    import deepspeed
-                    deepspeed.init_distributed(dist_backend='nccl')
-                    # Initialize the DeepSpeed-Inference engine
-                    ds_engine = deepspeed.init_inference(model,
-                                                         # mp_size=2,
-                                                         # dtype=torch.half,
-                                                         checkpoint=None,
-                                                         replace_with_kernel_inject=False)
-                    model = ds_engine.module
+                    if MOE_INFER:
+                        model = model  # 不用 deepspeed
+                        model.eval()
+                    else:
+                        import deepspeed
+                        deepspeed.init_distributed(dist_backend='nccl')
+                        # Initialize the DeepSpeed-Inference engine
+                        ds_engine = deepspeed.init_inference(model,
+                                                            # mp_size=2,
+                                                            # dtype=torch.half,
+                                                            checkpoint=None,
+                                                            replace_with_kernel_inject=False)
+                        model = ds_engine.module
                 else:
                     model = LlavaStablelmForCausalLM.from_pretrained(model_base, low_cpu_mem_usage=True, config=cfg_pretrained, **kwargs)
                 # model.config.eos_token_id = tokenizer.eos_token_id
@@ -277,15 +301,19 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
                 cfg_pretrained = AutoConfig.from_pretrained(model_path)
                 if getattr(cfg_pretrained, 'moe', {}).get('moe_enable', False):
                     model = EvalMoELLaVAQWenForCausalLM.from_pretrained(model_base, low_cpu_mem_usage=True, config=cfg_pretrained, **kwargs)
-                    import deepspeed
-                    deepspeed.init_distributed(dist_backend='nccl')
-                    # Initialize the DeepSpeed-Inference engine
-                    ds_engine = deepspeed.init_inference(model,
-                                                         # mp_size=2,
-                                                         # dtype=torch.half,
-                                                         checkpoint=None,
-                                                         replace_with_kernel_inject=False)
-                    model = ds_engine.module
+                    if MOE_INFER:
+                        model = model  # 不用 deepspeed
+                        model.eval()
+                    else:
+                        import deepspeed
+                        deepspeed.init_distributed(dist_backend='nccl')
+                        # Initialize the DeepSpeed-Inference engine
+                        ds_engine = deepspeed.init_inference(model,
+                                                            # mp_size=2,
+                                                            # dtype=torch.half,
+                                                            checkpoint=None,
+                                                            replace_with_kernel_inject=False)
+                        model = ds_engine.module
                 else:
                     model = LlavaQWenForCausalLM.from_pretrained(model_base, low_cpu_mem_usage=True, config=cfg_pretrained, **kwargs)
                 model.generation_config = GenerationConfig.from_pretrained(model_base, pad_token_id=tokenizer.pad_token_id)
@@ -298,15 +326,19 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
                 cfg_pretrained = AutoConfig.from_pretrained(model_path)
                 if getattr(cfg_pretrained, 'moe', {}).get('moe_enable', False):
                     model = EvalMoELLaVALlamaForCausalLM.from_pretrained(model_base, low_cpu_mem_usage=True, config=cfg_pretrained, **kwargs)
-                    import deepspeed
-                    deepspeed.init_distributed(dist_backend='nccl')
-                    # Initialize the DeepSpeed-Inference engine
-                    ds_engine = deepspeed.init_inference(model,
-                                                         # mp_size=2,
-                                                         # dtype=torch.half,
-                                                         checkpoint=None,
-                                                         replace_with_kernel_inject=False)
-                    model = ds_engine.module
+                    if MOE_INFER:
+                        model = model  # 不用 deepspeed
+                        model.eval()
+                    else:
+                        import deepspeed
+                        deepspeed.init_distributed(dist_backend='nccl')
+                        # Initialize the DeepSpeed-Inference engine
+                        ds_engine = deepspeed.init_inference(model,
+                                                            # mp_size=2,
+                                                            # dtype=torch.half,
+                                                            checkpoint=None,
+                                                            replace_with_kernel_inject=False)
+                        model = ds_engine.module
                 else:
                     model = LlavaLlamaForCausalLM.from_pretrained(model_base, low_cpu_mem_usage=True, config=cfg_pretrained, **kwargs)
             # =============================================================================================
@@ -326,15 +358,19 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
                 if 'moe' in model_name.lower():
                     assert not load_8bit and not load_4bit  # FIXME
                     model = EvalMoELLaVAQWenForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, **kwargs)
-                    import deepspeed
-                    deepspeed.init_distributed(dist_backend='nccl')
-                    # Initialize the DeepSpeed-Inference engine
-                    ds_engine = deepspeed.init_inference(model,
-                                                         # mp_size=2,
-                                                         # dtype=torch.half,
-                                                         checkpoint=None,
-                                                         replace_with_kernel_inject=False)
-                    model = ds_engine.module
+                    if MOE_INFER:
+                        model = model  # 不用 deepspeed
+                        model.eval()
+                    else:
+                        import deepspeed
+                        deepspeed.init_distributed(dist_backend='nccl')
+                        # Initialize the DeepSpeed-Inference engine
+                        ds_engine = deepspeed.init_inference(model,
+                                                            # mp_size=2,
+                                                            # dtype=torch.half,
+                                                            checkpoint=None,
+                                                            replace_with_kernel_inject=False)
+                        model = ds_engine.module
                 else:
                     model = LlavaQWenForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, **kwargs)
                     print(model)
@@ -349,15 +385,19 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
                 if 'moe' in model_name.lower():
                     assert not load_8bit and not load_4bit  # FIXME
                     model = EvalMoELLaVAMistralForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, **kwargs)
-                    import deepspeed
-                    deepspeed.init_distributed(dist_backend='nccl')
-                    # Initialize the DeepSpeed-Inference engine
-                    ds_engine = deepspeed.init_inference(model,
-                                                         # mp_size=2,
-                                                         # dtype=torch.half,
-                                                         checkpoint=None,
-                                                         replace_with_kernel_inject=False)
-                    model = ds_engine.module
+                    if MOE_INFER:
+                        model = model  # 不用 deepspeed
+                        model.eval()
+                    else:
+                        import deepspeed
+                        deepspeed.init_distributed(dist_backend='nccl')
+                        # Initialize the DeepSpeed-Inference engine
+                        ds_engine = deepspeed.init_inference(model,
+                                                            # mp_size=2,
+                                                            # dtype=torch.half,
+                                                            checkpoint=None,
+                                                            replace_with_kernel_inject=False)
+                        model = ds_engine.module
                 else:
                     model = LlavaMistralForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, **kwargs)
                 print(model)
@@ -367,15 +407,19 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
                 if 'moe' in model_name.lower():
                     assert not load_8bit and not load_4bit  # FIXME
                     model = EvalMoELLaVAPhiForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, **kwargs)
-                    import deepspeed
-                    deepspeed.init_distributed(dist_backend='nccl')
-                    # Initialize the DeepSpeed-Inference engine
-                    ds_engine = deepspeed.init_inference(model,
-                                                         # mp_size=2,
-                                                         # dtype=torch.half,
-                                                         checkpoint=None,
-                                                         replace_with_kernel_inject=False)
-                    model = ds_engine.module
+                    if MOE_INFER:
+                        model = model
+                        model.eval()
+                    else:
+                        import deepspeed
+                        deepspeed.init_distributed(dist_backend='nccl')
+                        # Initialize the DeepSpeed-Inference engine
+                        ds_engine = deepspeed.init_inference(model,
+                                                            # mp_size=2,
+                                                            # dtype=torch.half,
+                                                            checkpoint=None,
+                                                            replace_with_kernel_inject=False)
+                        model = ds_engine.module
                 else:
                     model = LlavaPhiForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, **kwargs)
                 model.config.eos_token_id = tokenizer.eos_token_id
@@ -385,15 +429,19 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
                 if 'moe' in model_name.lower():
                     assert not load_8bit and not load_4bit  # FIXME
                     model = EvalMoELLaVAQwen1_5ForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, **kwargs)
-                    import deepspeed
-                    deepspeed.init_distributed(dist_backend='nccl')
-                    # Initialize the DeepSpeed-Inference engine
-                    ds_engine = deepspeed.init_inference(model,
-                                                         # mp_size=2,
-                                                         # dtype=torch.half,
-                                                         checkpoint=None,
-                                                         replace_with_kernel_inject=False)
-                    model = ds_engine.module
+                    if MOE_INFER:
+                        model = model  # 不用 deepspeed
+                        model.eval()
+                    else:
+                        import deepspeed
+                        deepspeed.init_distributed(dist_backend='nccl')
+                        # Initialize the DeepSpeed-Inference engine
+                        ds_engine = deepspeed.init_inference(model,
+                                                            # mp_size=2,
+                                                            # dtype=torch.half,
+                                                            checkpoint=None,
+                                                            replace_with_kernel_inject=False)
+                        model = ds_engine.module
                 else:
                     model = LlavaQwen1_5ForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, **kwargs)
                 model.config.eos_token_id = tokenizer.eos_token_id
@@ -403,15 +451,19 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
                 if 'moe' in model_name.lower():
                     assert not load_8bit and not load_4bit  # FIXME
                     model = EvalMoELLaVAMiniCPMForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, **kwargs)
-                    import deepspeed
-                    deepspeed.init_distributed(dist_backend='nccl')
-                    # Initialize the DeepSpeed-Inference engine
-                    ds_engine = deepspeed.init_inference(model,
-                                                         # mp_size=2,
-                                                         # dtype=torch.half,
-                                                         checkpoint=None,
-                                                         replace_with_kernel_inject=False)
-                    model = ds_engine.module
+                    if MOE_INFER:
+                        model = model  # 不用 deepspeed
+                        model.eval()
+                    else:
+                        import deepspeed
+                        deepspeed.init_distributed(dist_backend='nccl')
+                        # Initialize the DeepSpeed-Inference engine
+                        ds_engine = deepspeed.init_inference(model,
+                                                            # mp_size=2,
+                                                            # dtype=torch.half,
+                                                            checkpoint=None,
+                                                            replace_with_kernel_inject=False)
+                        model = ds_engine.module
                 else:
                     model = LlavaMiniCPMForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, **kwargs)
                 model.config.eos_token_id = tokenizer.eos_token_id
@@ -422,15 +474,19 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
                 if 'moe' in model_name.lower():
                     assert not load_8bit and not load_4bit  # FIXME
                     model = EvalMoELLaVAStablelmForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, **kwargs)
-                    import deepspeed
-                    deepspeed.init_distributed(dist_backend='nccl')
-                    # Initialize the DeepSpeed-Inference engine
-                    ds_engine = deepspeed.init_inference(model,
-                                                         # mp_size=2,
-                                                         # dtype=torch.half,
-                                                         checkpoint=None,
-                                                         replace_with_kernel_inject=False)
-                    model = ds_engine.module
+                    if MOE_INFER:
+                        model = model  # 不用 deepspeed
+                        model.eval()
+                    else:
+                        import deepspeed
+                        deepspeed.init_distributed(dist_backend='nccl')
+                        # Initialize the DeepSpeed-Inference engine
+                        ds_engine = deepspeed.init_inference(model,
+                                                            # mp_size=2,
+                                                            # dtype=torch.half,
+                                                            checkpoint=None,
+                                                            replace_with_kernel_inject=False)
+                        model = ds_engine.module
                 else:
                     model = LlavaStablelmForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, **kwargs)
                 # model.config.eos_token_id = tokenizer.eos_token_id
@@ -439,16 +495,20 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
                 if 'moe' in model_name.lower():
                     assert not load_8bit and not load_4bit  # FIXME
                     model = EvalMoELLaVALlamaForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, **kwargs)
-                    import deepspeed
-                    deepspeed.init_distributed(dist_backend='nccl')
-                    print(model)
-                    # Initialize the DeepSpeed-Inference engine
-                    ds_engine = deepspeed.init_inference(model,
-                                                         # mp_size=2,
-                                                         # dtype=torch.half,
-                                                         checkpoint=None,
-                                                         replace_with_kernel_inject=False)
-                    model = ds_engine.module
+                    if MOE_INFER:
+                        model = model  # 不用 deepspeed
+                        model.eval()
+                    else:
+                        import deepspeed
+                        deepspeed.init_distributed(dist_backend='nccl')
+                        print(model)
+                        # Initialize the DeepSpeed-Inference engine
+                        ds_engine = deepspeed.init_inference(model,
+                                                            # mp_size=2,
+                                                            # dtype=torch.half,
+                                                            checkpoint=None,
+                                                            replace_with_kernel_inject=False)
+                        model = ds_engine.module
                 else:
                     model = LlavaLlamaForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, **kwargs)
 
@@ -469,7 +529,7 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
             use_fast = False
             if 'mpt' in model_name.lower():
                 tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=True, padding_side=padding_side)
-                model = AutoModelForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, trust_remote_code=True, **kwargs)
+                model = AutoModelForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, trust_remote_code=False, **kwargs)
             else:
                 tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False, padding_side=padding_side)
                 model = AutoModelForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, **kwargs)

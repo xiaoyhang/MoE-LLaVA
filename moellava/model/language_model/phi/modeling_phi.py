@@ -44,7 +44,7 @@ from transformers.utils import (
     logging,
     replace_return_docstrings,
 )
-from .configuration_phi import PhiConfig
+from transformers import PhiConfig
 
 
 try:

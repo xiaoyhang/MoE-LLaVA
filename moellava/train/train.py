@@ -1171,7 +1171,7 @@ def train():
     if model_args.image_tower is not None or model_args.video_tower is not None:
         if not model_args.moe_enable:
             if 'mpt' in model_args.model_name_or_path.lower():
-                config = transformers.AutoConfig.from_pretrained(model_args.model_name_or_path, trust_remote_code=True)
+                config = transformers.AutoConfig.from_pretrained(model_args.model_name_or_path, trust_remote_code=False)
                 config.attn_config['attn_impl'] = training_args.mpt_attn_impl
                 model = LlavaMPTForCausalLM.from_pretrained(
                     model_args.model_name_or_path,
